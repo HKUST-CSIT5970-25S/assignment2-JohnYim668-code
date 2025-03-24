@@ -2,7 +2,7 @@ import re
 from collections import Counter
 from pandas import DataFrame
 
-path_to_input_text = "cor-demo-sample.txt" # Replace this by your testing input data.
+path_to_input_text = "../cor-demo-sample.txt" # Replace this by your testing input data.
 
 def drop_empty_item(words):
     return [word for word in words if word != '']

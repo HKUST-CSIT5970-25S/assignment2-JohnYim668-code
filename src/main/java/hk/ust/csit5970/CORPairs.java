@@ -53,6 +53,21 @@ public class CORPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			 // Count the occurrences of each word in the current line
+			while (doc_tokenizer.hasMoreTokens()) {
+				String word = doc_tokenizer.nextToken();
+				// If the word is already in the map, increment its count; otherwise, set it to 1
+				if (word_set.containsKey(word)) {
+					word_set.put(word, word_set.get(word) + 1); // Increment the count
+				} else {
+					word_set.put(word, 1); // Initialize the count to 1
+				}
+			}
+
+			// Emit each word with its frequency to the context
+			for (Map.Entry<String, Integer> entry : word_set.entrySet()) {
+				context.write(new Text(entry.getKey()), new IntWritable(entry.getValue()));
+			}
 		}
 	}
 
@@ -66,6 +81,11 @@ public class CORPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			int sum = 0;
+            for (IntWritable val : values) {
+                sum += val.get();
+            }
+            context.write(key, new IntWritable(sum));
 		}
 	}
 
@@ -74,6 +94,9 @@ public class CORPairs extends Configured implements Tool {
 	 * TODO: Write your second-pass Mapper here.
 	 */
 	public static class CORPairsMapper2 extends Mapper<LongWritable, Text, PairOfStrings, IntWritable> {
+		private final static IntWritable ONE = new IntWritable(1);
+        private final static PairOfStrings pair = new PairOfStrings();
+
 		@Override
 		protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
 			// Please use this tokenizer! DO NOT implement a tokenizer by yourself!
@@ -81,6 +104,32 @@ public class CORPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			// Use a HashSet to ensure we only keep unique words
+			HashSet<String> distinctWords = new HashSet<String>();
+			while (doc_tokenizer.hasMoreTokens()) {
+				distinctWords.add(doc_tokenizer.nextToken());
+			}
+
+			// Convert the HashSet to an array for pair generation
+			String[] wordsArray = distinctWords.toArray(new String[0]);
+
+			// Generate and emit unique word pairs
+			for (int i = 0; i < wordsArray.length; i++) {
+				for (int j = i + 1; j < wordsArray.length; j++) {
+					String firstWord = wordsArray[i];
+					String secondWord = wordsArray[j];
+
+					// Determine the order of words for the pair
+					if (firstWord.compareTo(secondWord) < 0) {
+						pair.set(firstWord, secondWord);
+					} else {
+						pair.set(secondWord, firstWord);
+					}
+
+					// Emit the word pair with a count of one
+					context.write(pair, ONE);
+				}
+			}
 		}
 	}
 
@@ -93,6 +142,11 @@ public class CORPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			int sum = 0;
+            for (IntWritable val : values) {
+                sum += val.get();
+            }
+            context.write(key, new IntWritable(sum));
 		}
 	}
 
@@ -145,6 +199,22 @@ public class CORPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			// Calculate the total frequency of the word pair (bigram)
+			int totalFrequency = 0;
+			for (IntWritable count : values) {
+				totalFrequency += count.get();
+			}
+
+			// Retrieve the frequencies for each individual word in the pair
+			Integer frequencyA = word_total_map.get(key.getLeftElement());
+			Integer frequencyB = word_total_map.get(key.getRightElement());
+
+			// Check if both word frequencies are valid and greater than zero
+			if (frequencyA != null && frequencyB != null && frequencyA > 0 && frequencyB > 0) {
+				// Calculate the correlation coefficient
+				double correlationCoefficient = (double) totalFrequency / (frequencyA * frequencyB);
+				context.write(key, new DoubleWritable(correlationCoefficient));
+			}
 		}
 	}
 

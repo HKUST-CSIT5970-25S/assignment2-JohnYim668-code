@@ -44,16 +44,40 @@ public class BigramFrequencyStripes extends Configured implements Tool {
 		// Reuse objects to save overhead of object creation.
 		private static final Text KEY = new Text();
 		private static final HashMapStringIntWritable STRIPE = new HashMapStringIntWritable();
+		private static final HashMapStringIntWritable TOTAL_COUNTS = new HashMapStringIntWritable();
 
 		@Override
 		public void map(LongWritable key, Text value, Context context)
 				throws IOException, InterruptedException {
 			String line = ((Text) value).toString();
 			String[] words = line.trim().split("\\s+");
-
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			if (words.length > 1) {
+            // Handle the first word as key
+            KEY.set(words[0]);
+
+            for (int i = 1; i < words.length; i++) {
+                String currentWord = words[i];
+
+                // Check if the current word is the same as the previous word
+                if (!currentWord.equals(words[i - 1])) {
+                    STRIPE.clear();
+                    STRIPE.increment(currentWord); // Count the bigram (previous word, current word)
+                    context.write(KEY, STRIPE);
+                }
+
+                // Total occurrences for the first word
+                KEY.set(words[0]);
+                STRIPE.clear();
+                STRIPE.increment(""); // Count total occurrences of the first word
+                context.write(KEY, STRIPE);
+
+                // Move the key to the current word for the next iteration
+                KEY.set(currentWord);
+            	}
+        	}
 		}
 	}
 
@@ -67,6 +91,7 @@ public class BigramFrequencyStripes extends Configured implements Tool {
 		private final static HashMapStringIntWritable SUM_STRIPES = new HashMapStringIntWritable();
 		private final static PairOfStrings BIGRAM = new PairOfStrings();
 		private final static FloatWritable FREQ = new FloatWritable();
+		private int totalCount;
 
 		@Override
 		public void reduce(Text key,
@@ -75,6 +100,36 @@ public class BigramFrequencyStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			// Clear previous sums
+			SUM_STRIPES.clear();
+			totalCount = 0;
+
+			// Aggregate the stripes
+			for (HashMapStringIntWritable stripe : stripes) {
+				for (Map.Entry<String, Integer> entry : stripe.entrySet()) {
+					SUM_STRIPES.increment(entry.getKey(), entry.getValue());
+					// Count total occurrences of the first word
+					if (!entry.getKey().isEmpty()) {
+						totalCount += entry.getValue();
+					}
+				}
+			}
+
+			// Emit total count for the first word
+			FREQ.set((float) totalCount);
+			BIGRAM.set(key.toString(), "");
+			context.write(BIGRAM, FREQ);
+
+			// Calculate and emit relative frequencies for bigrams
+			for (Map.Entry<String, Integer> entry : SUM_STRIPES.entrySet()) {
+				String secondWord = entry.getKey();
+				if (!secondWord.isEmpty()) {
+					float probability = (float) entry.getValue() / totalCount;
+					BIGRAM.set(key.toString(), secondWord);
+					FREQ.set(probability);
+					context.write(BIGRAM, FREQ);
+				}
+			}
 		}
 	}
 
@@ -94,6 +149,17 @@ public class BigramFrequencyStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			// Clear the SUM_STRIPES before starting the aggregation
+			SUM_STRIPES.clear();
+
+			// Aggregate counts from all stripes
+			for (HashMapStringIntWritable stripe : stripes) {
+				// Use the plus method to combine counts
+				SUM_STRIPES.plus(stripe);
+			}
+
+			// Emit the combined result for the key
+			context.write(key, SUM_STRIPES);
 		}
 	}
 

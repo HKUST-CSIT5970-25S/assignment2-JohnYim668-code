@@ -49,10 +49,36 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 				throws IOException, InterruptedException {
 			String line = ((Text) value).toString();
 			String[] words = line.trim().split("\\s+");
-			
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			// Check if there are at least two words to form a bigram
+    		if (words.length > 1) {
+       		// Initialize the last_word variable to hold the preceding word
+        	String last_word = words[0];
+
+        	// Loop through the words starting from the second word
+       		for (int i = 1; i < words.length; i++) {
+				// Get the current word
+				String current_word = words[i];
+
+            	// Skip empty words
+            	if (current_word.length() == 0) {
+					continue;
+            	}
+
+            	// Emit bigram (last_word, current_word) with count 1
+            	BIGRAM.set(last_word, current_word);
+            	context.write(BIGRAM, ONE);
+
+            	// Emit preceding word (last_word) with count 1
+            	BIGRAM.set(last_word, ""); // Use empty string as the second element to indicate total count
+            	context.write(BIGRAM, ONE);
+
+            	// Update last_word to the current word for the next iteration
+            	last_word = current_word;
+        		}
+    		}
 		}
 	}
 
@@ -64,13 +90,40 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 
 		// Reuse objects.
 		private final static FloatWritable VALUE = new FloatWritable();
+		private HashMapStringIntWritable marginalCounts = new HashMapStringIntWritable();
 
 		@Override
 		public void reduce(PairOfStrings key, Iterable<IntWritable> values,
 				Context context) throws IOException, InterruptedException {
-			/*
-			 * TODO: Your implementation goes here.
-			 */
+					/*
+					* TODO: Your implementation goes here.
+					*/
+					// Initialize count for the current key
+        			int count = 0;
+        			int totalCount = 0;
+					// Iterate through values to calculate the total count for the current key
+					for (IntWritable val : values) {
+						count += val.get();
+        			}
+
+        			// Check if the key represents a total count for a preceding word
+        			if (key.getRightElement().isEmpty()) {
+						// Store the total count for the preceding word
+						marginalCounts.put(key.getLeftElement(), count);
+            			VALUE.set((float) count); // Set the value for total count
+            			context.write(key, VALUE); // Emit total count for the preceding word
+
+        			} else {
+						// Calculate the relative frequency if the key is a bigram
+						if (marginalCounts.containsKey(key.getLeftElement())) {
+							totalCount = marginalCounts.get(key.getLeftElement());
+							if (totalCount > 0) {
+								// Calculate relative frequency: occurrences of the bigram / total occurrences of the preceding word
+								VALUE.set((float) count / totalCount);
+								context.write(key, VALUE); // Emit bigram with relative frequency
+					}
+                }
+            }
 		}
 	}
 	
@@ -81,9 +134,22 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 		@Override
 		public void reduce(PairOfStrings key, Iterable<IntWritable> values,
 				Context context) throws IOException, InterruptedException {
-			/*
-			 * TODO: Your implementation goes here.
-			 */
+					/*
+					* TODO: Your implementation goes here.
+					*/
+					// Initialize the sum to accumulate the counts for the current key
+        			int sum = 0;
+
+        			// Iterate through the values to calculate the total sum for the current key
+        			for (IntWritable val : values) {
+						sum += val.get(); // Add each value to the sum
+        			}
+
+        			// Set the computed sum into the SUM writable
+       		 		SUM.set(sum);
+
+        			// Emit the key and the computed sum
+        			context.write(key, SUM);
 		}
 	}
 

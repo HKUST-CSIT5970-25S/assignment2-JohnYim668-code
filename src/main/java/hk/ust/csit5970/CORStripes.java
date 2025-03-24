@@ -43,6 +43,25 @@ public class CORStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			HashMap<String, Integer> wordCount = new HashMap<String, Integer>();
+
+			// Count the frequency of each word in the line
+			while (doc_tokenizer.hasMoreTokens()) {
+				String word = doc_tokenizer.nextToken();
+				// Check if the word is already in the map and update the count
+				if (wordCount.containsKey(word)) {
+					// Increment the existing count
+					wordCount.put(word, wordCount.get(word) + 1);
+				} else {
+					// Add the word with a count of 1
+					wordCount.put(word, 1);
+				}
+			}
+
+			// Emit each word with its frequency
+			for (Map.Entry<String, Integer> entry : wordCount.entrySet()) {
+				context.write(new Text(entry.getKey()), new IntWritable(entry.getValue()));
+			}
 		}
 	}
 
@@ -56,6 +75,11 @@ public class CORStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			int totalFreq = 0;
+            for (IntWritable count : values) {
+                totalFreq += count.get();
+            }
+            context.write(key, new IntWritable(totalFreq));
 		}
 	}
 
@@ -75,6 +99,28 @@ public class CORStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			// Prepare a list from the unique words for easier indexing
+			List<String> wordList = new ArrayList<String>(sorted_word_set);
+			
+			// Iterate through each word to create co-occurrence counts
+			for (int currentIndex = 0; currentIndex < wordList.size(); currentIndex++) {
+				MapWritable coOccurrenceMap = new MapWritable();
+				
+				// Compare the current word with all subsequent words
+				for (int neighborIndex = currentIndex + 1; neighborIndex < wordList.size(); neighborIndex++) {
+					Text neighborWord = new Text(wordList.get(neighborIndex));
+					
+					// Update co-occurrence counts in the map
+					if (coOccurrenceMap.containsKey(neighborWord)) {
+						IntWritable existingCount = (IntWritable) coOccurrenceMap.get(neighborWord);
+						existingCount.set(existingCount.get() + 1); // Increment the count
+					} else {
+						coOccurrenceMap.put(neighborWord, new IntWritable(1)); // Initialize count for new co-occurrence
+					}
+				}
+				// Emit the current word along with its co-occurrence counts
+				context.write(new Text(wordList.get(currentIndex)), coOccurrenceMap);
+			}
 		}
 	}
 
@@ -89,6 +135,27 @@ public class CORStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			// Combine the MapWritable values
+			MapWritable combinedMap = new MapWritable();
+
+			for (MapWritable value : values) {
+				for (Writable innerKey : value.keySet()) {
+					IntWritable count = (IntWritable) value.get(innerKey);
+					// Get the current count for this inner key, or use ZERO if it doesn't exist
+					IntWritable currentCount = (IntWritable) combinedMap.get(innerKey);
+
+					if (currentCount == null) {
+						// If there is no current count, initialize it to ZERO
+						combinedMap.put(innerKey, new IntWritable(count.get()));
+					} else {
+						// Otherwise, increment the existing count
+						currentCount.set(currentCount.get() + count.get());
+					}
+				}
+			}
+
+			// Emit the combined map for the key
+			context.write(key, combinedMap);
 		}
 	}
 
@@ -142,6 +209,41 @@ public class CORStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			Map<String, Integer> freqMap = new HashMap<String, Integer>();
+			int freqA = word_total_map.get(key.toString());
+
+			// Aggregate the frequencies of each word pair
+			for (MapWritable value : values) {
+				for (Writable innerKey : value.keySet()) {
+					String otherWord = innerKey.toString();
+					IntWritable count = (IntWritable) value.get(innerKey);
+
+					// Check if the other word already has a count in freqMap
+					if (freqMap.containsKey(otherWord)) {
+						freqMap.put(otherWord, freqMap.get(otherWord) + count.get());
+					} else {
+						freqMap.put(otherWord, count.get());
+					}
+				}
+			}
+
+			// Calculate COR(A, B) for each pair
+			for (Map.Entry<String, Integer> entry : freqMap.entrySet()) {
+				String wordB = entry.getKey();
+				int freqAB = entry.getValue();
+				int freqB = word_total_map.get(wordB);
+
+				// Calculate correlation coefficient
+				double correlation = (double) freqAB / (freqA * freqB);
+				PairOfStrings pair = new PairOfStrings(key.toString(), wordB);
+
+				// Ensure the output is in alphabetical order
+				if (pair.getLeftElement().compareTo(pair.getRightElement()) > 0) {
+					pair.set(pair.getRightElement(), pair.getLeftElement());
+				}
+
+				context.write(pair, new DoubleWritable(correlation));
+			}
 		}
 	}
 
